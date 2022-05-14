@@ -171,7 +171,7 @@ var server = net.createServer(function (socket) {
   guestSockets.push(guestSocket);
 
   // Welcome user to the socket
-  guestSocket.socket.write("Welcome to telnet chat!\n");
+  guestSocket.socket.write("Welcome to chat!\n");
 
   // When client sends data
   guestSocket.socket.on("data", async function (data) {
@@ -300,6 +300,7 @@ var server = net.createServer(function (socket) {
     }
 
     if (dataString.startsWith("/join")) {
+      // unnecessary
       const roomName = dataString.split(" ")[1];
       await guestSocket.joinRoom(roomName);
       return;
@@ -331,12 +332,10 @@ var server = net.createServer(function (socket) {
     }
 
     await guestSocket.sendMessage(dataString);
-
-    // var message = guestSocket.nickname + "> " + data.toString() + "\n";
   });
 
   // When client leaves
-  guestSocket.socket.on("end", function () {
+  guestSocket.socket.on("close", function () {
     var message = guestSocket.nickname + " left this chat\n";
 
     // Log it to the server output
@@ -344,53 +343,13 @@ var server = net.createServer(function (socket) {
 
     // Remove client from socket array
     removeSocket(guestSocket);
-
-    // Notify all clients
-    broadcast(guestSocket.nickname, message);
   });
 
   // When socket gets errors
   guestSocket.socket.on("error", function (error) {
-    console.log("Socket got problems: ", error.message);
+    // ignore
   });
 });
-
-// Broadcast to others, excluding the sender
-function broadcast(from: string, message: string) {
-  // If there are no sockets, then don't broadcast any messages
-  if (guestSockets.length === 0) {
-    process.stdout.write("Everyone left the chat");
-    return;
-  }
-
-  // If there are clients remaining then broadcast message
-  guestSockets.forEach(function (guestSocket, index, array) {
-    // Dont send any messages to the sender
-    if (guestSocket.nickname === from) {
-      return;
-    }
-
-    guestSocket.socket.write(message);
-  });
-}
-
-function sendMessage(from: string, to: string, message: string) {
-  // If there are no sockets, then don't broadcast any messages
-  if (guestSockets.length === 0) {
-    process.stdout.write("Everyone left the chat");
-    return;
-  }
-
-  // If there are clients remaining then broadcast message
-  guestSockets.forEach(function (guestSocket, index, array) {
-    // Dont send any messages to the sender
-    if (guestSocket.nickname === from) {
-      return;
-    }
-
-    guestSocket.socket.write(message);
-  });
-}
 
 // Remove disconnected client from sockets array
 function removeSocket(socket: MySocket) {
@@ -401,9 +360,6 @@ function removeSocket(socket: MySocket) {
 server.on("error", function (error) {
   console.log("So we got problems!", error.message);
 });
-
-// Listen for a port to telnet to
-// then in the terminal just run 'telnet localhost [port]'
 
 async function main() {
   await ConnectionHelper.connect();
