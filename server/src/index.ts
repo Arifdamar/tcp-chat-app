@@ -3,6 +3,7 @@ import { ConnectionHelper } from "./helpers/connectionHelper";
 import { IUser, UserModel } from "./models/user";
 import bcrypt from "bcrypt";
 import { IRoom, RoomModel } from "./models/room";
+import MessageModel from "./models/message";
 
 class MySocket {
   socket: Socket;
@@ -21,10 +22,28 @@ class MySocket {
     this.availableRooms = [];
   }
 
-  joinRoom(roomName: string) {
-    if (!this.availableRooms.some((room) => room.roomName === roomName)) {
+  async joinRoom(roomName: string) {
+    let roomToJoin: IRoom | undefined | null = this.availableRooms.find(
+      (room) => room.roomName === roomName
+    );
+    if (!roomToJoin) {
       this.socket.write("You cannot join this room");
       return;
+    }
+
+    // leave the current room
+    if (this.currentRoomName !== "") {
+      const sockets = roomSockets.get(this.currentRoomName);
+
+      if (sockets) {
+        sockets.splice(sockets.indexOf(this), 1);
+      }
+
+      sockets?.forEach((socket) => {
+        if (socket.nickname === this.nickname) return;
+
+        socket.socket.write(this.nickname + " left channel!\n");
+      });
     }
 
     this.currentRoomName = roomName;
@@ -37,14 +56,82 @@ class MySocket {
       sockets.push(this);
     }
 
+    sockets?.forEach((socket) => {
+      if (socket.nickname === this.nickname) return;
+
+      socket.socket.write(this.nickname + " joined channel!\n");
+    });
+
+    roomToJoin = await RoomModel.findOne({ _id: roomToJoin._id })
+      .populate({
+        path: "messages",
+        populate: {
+          path: "from",
+        },
+      })
+      .exec();
+
+    let updateMessagePromises: Promise<any>[] = [];
+
+    const unreadMessages = roomToJoin?.messages.filter(
+      (msg) => !msg.receivers.includes(this.user!._id)
+    );
+
+    let unreadMessagesText = "";
+
+    if (unreadMessages) {
+      for (const msg of unreadMessages) {
+        updateMessagePromises.push(
+          MessageModel.updateOne(
+            { _id: msg._id },
+            { $push: { receivers: this.user!._id } }
+          ).exec()
+        );
+
+        const user = await UserModel.findById(msg.from, { nickname: 1 });
+
+        unreadMessagesText += `${user?.nickname}> ${msg.message}\n`;
+      }
+    }
+
+    await Promise.all(updateMessagePromises);
+
     this.socket.write(`You joined ${roomName}\n`);
+    this.socket.write(unreadMessagesText);
     return;
   }
 
-  sendMessage(message: string) {
+  async sendMessage(message: string) {
     const socketsToSend = roomSockets
       .get(this.currentRoomName)
       ?.filter((s) => s.currentRoomName === this.currentRoomName);
+
+    const roomToMessage = this.availableRooms.find(
+      (r) => r.roomName === this.currentRoomName
+    )!;
+
+    await roomToMessage.populate("participants");
+    const receivers = [];
+
+    for (const participant of roomToMessage.participants) {
+      const isReceived = socketsToSend?.some(
+        (s) => s.nickname === participant.nickname
+      );
+
+      if (isReceived) {
+        receivers.push(participant);
+      }
+    }
+
+    const messageObject = await MessageModel.create({
+      from: this.user!.id,
+      to: roomToMessage.id,
+      receivers: receivers.map((u) => u._id),
+      message: message,
+    });
+
+    roomToMessage.messageIds.push(messageObject._id);
+    await roomToMessage.save();
 
     if (socketsToSend) {
       socketsToSend.forEach((socket) => {
@@ -53,6 +140,8 @@ class MySocket {
         socket.socket.write(this.nickname + "> " + message + "\n");
       });
     }
+
+    return;
   }
 }
 
@@ -74,12 +163,6 @@ var server = net.createServer(function (socket) {
 
   // Welcome user to the socket
   guestSocket.socket.write("Welcome to telnet chat!\n");
-
-  // Broadcast to others excluding this socket
-  broadcast(
-    guestSocket.nickname,
-    guestSocket.nickname + " joined general chat.\n"
-  );
 
   // When client sends data
   guestSocket.socket.on("data", async function (data) {
@@ -106,7 +189,7 @@ var server = net.createServer(function (socket) {
           nickname,
           password: await bcrypt.hash(password, 10),
         });
-        GeneralRoom.participants.push(newUser._id);
+        GeneralRoom.participantIds.push(newUser._id);
         await GeneralRoom.save();
 
         const allOtherUsers = await UserModel.find({
@@ -116,7 +199,7 @@ var server = net.createServer(function (socket) {
         for (const otherUser of allOtherUsers) {
           const newRoom = await RoomModel.create({
             roomName: `${newUser.nickname}-${otherUser.nickname}`,
-            participants: [newUser._id, otherUser._id],
+            participantIds: [newUser._id, otherUser._id],
             isPublic: false,
             isDual: true,
           });
@@ -132,7 +215,7 @@ var server = net.createServer(function (socket) {
         guestSocket.socket.write("You are now registered!\n");
         let message = "You can join those rooms by typing '/join roomName'\n";
         guestSocket.availableRooms.forEach(
-          (room, index) => (message += `${index} - ${room.roomName}\n`)
+          (room) => (message += `${room.roomName}\n`)
         );
         guestSocket.socket.write(message);
         return;
@@ -150,18 +233,18 @@ var server = net.createServer(function (socket) {
             isDual: true,
             $or: [
               {
-                participants: [user._id, otherUser._id],
+                participantIds: [user._id, otherUser._id],
               },
               {
-                participants: [otherUser._id, user._id],
+                participantIds: [otherUser._id, user._id],
               },
             ],
-          });
+          }).populate("messages");
 
           if (!room) {
             room = await RoomModel.create({
               roomName: `${user.nickname}-${otherUser.nickname}`,
-              participants: [user._id, otherUser._id],
+              participantIds: [user._id, otherUser._id],
               isPublic: false,
               isDual: true,
             });
@@ -175,12 +258,26 @@ var server = net.createServer(function (socket) {
         guestSocket.user = user;
         guestSocket.nickname = user.nickname;
         guestSocket.currentRoomName = "general";
-        roomSockets.get("general")!.push(guestSocket);
         guestSocket.socket.write("You are now logged in!\n");
         let message = "You can join those rooms by typing '/join roomName'\n";
-        guestSocket.availableRooms.forEach(
-          (room, index) => (message += `${index} - ${room.roomName}\n`)
-        );
+
+        for (const r of guestSocket.availableRooms) {
+          const unreadMessages = r.messages
+            ? r.messages?.filter(
+                (m) => !m.receivers.includes(guestSocket.user!._id)
+              ).length
+            : 0;
+
+          message += `${r.roomName} ${
+            unreadMessages > 0
+              ? "- " +
+                unreadMessages +
+                " new " +
+                (unreadMessages === 1 ? "message" : "messages")
+              : ""
+          } \n`;
+        }
+
         guestSocket.socket.write(message);
         return;
       }
@@ -195,20 +292,36 @@ var server = net.createServer(function (socket) {
 
     if (dataString.startsWith("/join")) {
       const roomName = dataString.split(" ")[1];
-      guestSocket.joinRoom(roomName);
+      await guestSocket.joinRoom(roomName);
       return;
     }
 
     if (dataString.startsWith("/list")) {
       let message = "You can join those rooms by typing '/join roomName'\n";
-      guestSocket.availableRooms.forEach(
-        (room, index) => (message += `${index} - ${room.roomName}\n`)
-      );
+      guestSocket.availableRooms = [];
+      guestSocket.availableRooms = await RoomModel.find({
+        participantIds: { $in: guestSocket.user!._id },
+      }).populate("messages");
+
+      for (const r of guestSocket.availableRooms) {
+        const unreadMessages = r.messages.filter(
+          (m) => !m.receivers.includes(guestSocket.user!._id)
+        ).length;
+        message += `${r.roomName} ${
+          unreadMessages > 0
+            ? "- " +
+              unreadMessages +
+              " new " +
+              (unreadMessages === 1 ? "message" : "messages")
+            : ""
+        } \n`;
+      }
+
       guestSocket.socket.write(message);
       return;
     }
 
-    guestSocket.sendMessage(dataString);
+    await guestSocket.sendMessage(dataString);
 
     // var message = guestSocket.nickname + "> " + data.toString() + "\n";
   });
@@ -290,7 +403,7 @@ async function main() {
   if (!generalRoom) {
     generalRoom = await RoomModel.create({
       roomName: "general",
-      participants: [],
+      participantIds: [],
       isPublic: true,
       isDual: false,
     });
@@ -298,7 +411,9 @@ async function main() {
   GeneralRoom = generalRoom;
 
   publicRooms.push(
-    ...(await RoomModel.find({ isPublic: true, isDual: false }))
+    ...(await RoomModel.find({ isPublic: true, isDual: false }).populate(
+      "messages"
+    ))
   );
   publicRooms.forEach((room) => roomSockets.set(room.roomName, []));
 

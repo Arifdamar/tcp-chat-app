@@ -1,12 +1,14 @@
 import mongoose, { Document } from "mongoose";
 import { IMessage } from "./message";
+import { IUser } from "./user";
 
 export interface IRoom extends Document {
   _id: mongoose.Types.ObjectId;
   roomName: string;
   messageIds: mongoose.Types.ObjectId[];
   messages: IMessage[];
-  participants: mongoose.Types.ObjectId[];
+  participantIds: mongoose.Types.ObjectId[];
+  participants: IUser[];
   isPublic: boolean;
   isDual: boolean;
   updatedAt?: Date;
@@ -17,7 +19,7 @@ const roomSchema = new mongoose.Schema(
   {
     roomName: { type: String, required: true, unique: true },
     messageIds: { type: [mongoose.Types.ObjectId], required: true, index: 1 },
-    participants: { type: [mongoose.Types.ObjectId], required: true },
+    participantIds: { type: [mongoose.Types.ObjectId], required: true },
     isPublic: { type: Boolean, required: true },
     isDual: { type: Boolean, required: false },
   },
@@ -27,6 +29,13 @@ const roomSchema = new mongoose.Schema(
 roomSchema.virtual("messages", {
   ref: "messages",
   localField: "messageIds",
+  foreignField: "_id",
+  justOne: false,
+});
+
+roomSchema.virtual("participants", {
+  ref: "users",
+  localField: "participantIds",
   foreignField: "_id",
   justOne: false,
 });
