@@ -300,7 +300,6 @@ var server = net.createServer(function (socket) {
     }
 
     if (dataString.startsWith("/join")) {
-      // unnecessary
       const roomName = dataString.split(" ")[1];
       await guestSocket.joinRoom(roomName);
       return;
