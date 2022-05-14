@@ -28,12 +28,23 @@ class MySocket {
     }
 
     this.currentRoomName = roomName;
-    this.socket.write(`You joined ${roomName}`);
+
+    let sockets = roomSockets.get(roomName);
+
+    if (!sockets) {
+      roomSockets.set(roomName, [this]);
+    } else {
+      sockets.push(this);
+    }
+
+    this.socket.write(`You joined ${roomName}\n`);
     return;
   }
 
   sendMessage(message: string) {
-    const socketsToSend = rooms.get(this.currentRoomName);
+    const socketsToSend = roomSockets
+      .get(this.currentRoomName)
+      ?.filter((s) => s.currentRoomName === this.currentRoomName);
 
     if (socketsToSend) {
       socketsToSend.forEach((socket) => {
@@ -48,7 +59,7 @@ class MySocket {
 const guestSockets: MySocket[] = [];
 const publicRooms: IRoom[] = [];
 let GeneralRoom: IRoom = {} as IRoom;
-const rooms: Map<string, MySocket[]> = new Map<"general", []>();
+const roomSockets: Map<string, MySocket[]> = new Map<"general", []>();
 
 var port = 8085;
 var guestId = 0;
@@ -164,7 +175,7 @@ var server = net.createServer(function (socket) {
         guestSocket.user = user;
         guestSocket.nickname = user.nickname;
         guestSocket.currentRoomName = "general";
-        rooms.get("general")!.push(guestSocket);
+        roomSockets.get("general")!.push(guestSocket);
         guestSocket.socket.write("You are now logged in!\n");
         let message = "You can join those rooms by typing '/join roomName'\n";
         guestSocket.availableRooms.forEach(
@@ -289,7 +300,7 @@ async function main() {
   publicRooms.push(
     ...(await RoomModel.find({ isPublic: true, isDual: false }))
   );
-  publicRooms.forEach((room) => rooms.set(room.roomName, []));
+  publicRooms.forEach((room) => roomSockets.set(room.roomName, []));
 
   server.listen(port, function () {
     console.log("Server listening at http://localhost:" + port);
