@@ -37,7 +37,9 @@ class MySocket {
 
     if (socketsToSend) {
       socketsToSend.forEach((socket) => {
-        socket.socket.write(this.nickname + "> " + message);
+        if (socket.nickname === this.nickname) return;
+
+        socket.socket.write(this.nickname + "> " + message + "\n");
       });
     }
   }
@@ -194,6 +196,8 @@ var server = net.createServer(function (socket) {
       guestSocket.socket.write(message);
       return;
     }
+
+    guestSocket.sendMessage(dataString);
 
     // var message = guestSocket.nickname + "> " + data.toString() + "\n";
   });
