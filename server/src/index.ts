@@ -114,9 +114,10 @@ class MySocket {
     const receivers = [];
 
     for (const participant of roomToMessage.participants) {
-      const isReceived = socketsToSend?.some(
-        (s) => s.nickname === participant.nickname
-      );
+      const socs =
+        roomToMessage.roomName === "general" ? guestSockets : socketsToSend;
+
+      const isReceived = socs?.some((s) => s.nickname === participant.nickname);
 
       if (isReceived) {
         receivers.push(participant);
@@ -133,12 +134,20 @@ class MySocket {
     roomToMessage.messageIds.push(messageObject._id);
     await roomToMessage.save();
 
-    if (socketsToSend) {
-      socketsToSend.forEach((socket) => {
+    if (roomToMessage.roomName === "general") {
+      guestSockets.forEach((socket) => {
         if (socket.nickname === this.nickname) return;
 
         socket.socket.write(this.nickname + "> " + message + "\n");
       });
+    } else {
+      if (socketsToSend) {
+        socketsToSend.forEach((socket) => {
+          if (socket.nickname === this.nickname) return;
+
+          socket.socket.write(this.nickname + "> " + message + "\n");
+        });
+      }
     }
 
     return;
