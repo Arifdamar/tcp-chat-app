@@ -47,7 +47,6 @@ class MySocket {
     }
 
     this.currentRoomName = roomName;
-
     let sockets = roomSockets.get(roomName);
 
     if (!sockets) {
@@ -62,14 +61,14 @@ class MySocket {
       socket.socket.write(this.nickname + " joined channel!\n");
     });
 
-    roomToJoin = await RoomModel.findOne({ _id: roomToJoin._id })
-      .populate({
-        path: "messages",
-        populate: {
-          path: "from",
-        },
-      })
-      .exec();
+    roomToJoin = await RoomModel.findOne({ _id: roomToJoin._id }).populate(
+      "messages"
+    );
+
+    if (roomToJoin && !roomToJoin?.participantIds.includes(this.user!._id)) {
+      roomToJoin.participantIds.push(this.user!.id);
+      await roomToJoin.save();
+    }
 
     let updateMessagePromises: Promise<any>[] = [];
 
@@ -312,10 +311,20 @@ var server = net.createServer(function (socket) {
         participantIds: { $in: guestSocket.user!._id },
       }).populate("messages");
 
+      publicRooms.forEach((pr) => {
+        guestSocket.availableRooms.forEach((ar) => {
+          if (ar.roomName !== pr.roomName) {
+            guestSocket.availableRooms.push(pr);
+          }
+        });
+      });
+
       for (const r of guestSocket.availableRooms) {
-        const unreadMessages = r.messages.filter(
-          (m) => !m.receivers.includes(guestSocket.user!._id)
-        ).length;
+        const unreadMessages = r.messages
+          ? r.messages.filter(
+              (m) => !m.receivers.includes(guestSocket.user!._id)
+            ).length
+          : 0;
         message += `${r.roomName} ${
           unreadMessages > 0
             ? "- " +
@@ -327,6 +336,32 @@ var server = net.createServer(function (socket) {
       }
 
       guestSocket.socket.write(message);
+      return;
+    }
+
+    if (dataString.startsWith("/createRoom")) {
+      const argList = dataString.split(" ");
+      const roomName = argList[1];
+      const isPublic = argList[2] === "public";
+      const userNicknames = argList.slice(3, argList.length);
+
+      let userList: IUser[] = [guestSocket.user!];
+      for (const nickname of userNicknames) {
+        const user = await UserModel.findOne({ nickname });
+        if (user) userList.push(user);
+      }
+
+      await RoomModel.create({
+        roomName,
+        isPublic,
+        isDual: false,
+        participantIds: userList.map((u) => u._id),
+      });
+      return;
+    }
+
+    if (guestSocket.currentRoomName === "") {
+      guestSocket.socket.write("You should join a room first!\n");
       return;
     }
 

@@ -18,7 +18,7 @@ export interface IRoom extends Document {
 const roomSchema = new mongoose.Schema(
   {
     roomName: { type: String, required: true, unique: true },
-    messageIds: { type: [mongoose.Types.ObjectId], required: true, index: 1 },
+    messageIds: { type: [mongoose.Types.ObjectId], default: [], index: 1 },
     participantIds: { type: [mongoose.Types.ObjectId], required: true },
     isPublic: { type: Boolean, required: true },
     isDual: { type: Boolean, required: false },
