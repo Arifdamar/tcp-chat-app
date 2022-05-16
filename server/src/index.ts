@@ -4,13 +4,14 @@ import { IUser, UserModel } from "./models/user";
 import bcrypt from "bcrypt";
 import { IRoom, RoomModel } from "./models/room";
 import MessageModel from "./models/message";
+import { config } from "dotenv";
+import { serverConfig } from "./config";
 
 const guestSockets: AppSocket[] = [];
 const publicRooms: IRoom[] = [];
 let GeneralRoom: IRoom = {} as IRoom;
 const roomSockets: Map<string, AppSocket[]> = new Map();
 
-var port = 8085;
 var guestId = 0;
 
 class AppSocket {
@@ -425,8 +426,8 @@ async function main() {
   );
   publicRooms.forEach((room) => roomSockets.set(room.roomName, []));
 
-  server.listen(port, function () {
-    console.log("Server listening at http://localhost:" + port);
+  server.listen(serverConfig.port, function () {
+    console.log("Server listening at http://localhost:" + serverConfig.port);
   });
 }
 
