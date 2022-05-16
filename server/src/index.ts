@@ -5,7 +5,15 @@ import bcrypt from "bcrypt";
 import { IRoom, RoomModel } from "./models/room";
 import MessageModel from "./models/message";
 
-class MySocket {
+const guestSockets: AppSocket[] = [];
+const publicRooms: IRoom[] = [];
+let GeneralRoom: IRoom = {} as IRoom;
+const roomSockets: Map<string, AppSocket[]> = new Map();
+
+var port = 8085;
+var guestId = 0;
+
+class AppSocket {
   socket: Socket;
   nickname: string;
   isLoggedIn: boolean;
@@ -153,19 +161,11 @@ class MySocket {
   }
 }
 
-const guestSockets: MySocket[] = [];
-const publicRooms: IRoom[] = [];
-let GeneralRoom: IRoom = {} as IRoom;
-const roomSockets: Map<string, MySocket[]> = new Map<"general", []>();
-
-var port = 8085;
-var guestId = 0;
-
-var server = net.createServer(function (socket) {
+const server = net.createServer(function (socket) {
   // Increment
   guestId++;
 
-  const guestSocket = new MySocket(socket, "Guest" + guestId);
+  const guestSocket = new AppSocket(socket, "Guest" + guestId);
 
   guestSockets.push(guestSocket);
 
@@ -395,7 +395,7 @@ var server = net.createServer(function (socket) {
 });
 
 // Remove disconnected client from sockets array
-function removeSocket(socket: MySocket) {
+function removeSocket(socket: AppSocket) {
   guestSockets.splice(guestSockets.indexOf(socket), 1);
 }
 
