@@ -219,7 +219,6 @@ var server = net.createServer(function (socket) {
         guestSocket.isLoggedIn = true;
         guestSocket.user = newUser;
         guestSocket.nickname = newUser.nickname;
-        guestSocket.currentRoomName = "general";
         guestSocket.socket.write("You are now registered!\n");
         let message = "You can join those rooms by typing '/join roomName'\n";
         guestSocket.availableRooms.forEach(
@@ -265,7 +264,6 @@ var server = net.createServer(function (socket) {
         guestSocket.isLoggedIn = true;
         guestSocket.user = user;
         guestSocket.nickname = user.nickname;
-        guestSocket.currentRoomName = "general";
         guestSocket.socket.write("You are now logged in!\n");
         let message = "You can join those rooms by typing '/join roomName'\n";
 
@@ -311,13 +309,17 @@ var server = net.createServer(function (socket) {
         participantIds: { $in: guestSocket.user!._id },
       }).populate("messages");
 
-      publicRooms.forEach((pr) => {
-        guestSocket.availableRooms.forEach((ar) => {
-          if (ar.roomName !== pr.roomName) {
-            guestSocket.availableRooms.push(pr);
-          }
-        });
-      });
+      // console.log("publicRooms", publicRooms);
+      // console.log("availableRooms", guestSocket.availableRooms);
+
+      guestSocket.availableRooms.push(
+        ...publicRooms.filter(
+          (pr) =>
+            !guestSocket.availableRooms.some(
+              (ar) => ar.roomName === pr.roomName
+            )
+        )
+      );
 
       for (const r of guestSocket.availableRooms) {
         const unreadMessages = r.messages
@@ -325,6 +327,7 @@ var server = net.createServer(function (socket) {
               (m) => !m.receivers.includes(guestSocket.user!._id)
             ).length
           : 0;
+
         message += `${r.roomName} ${
           unreadMessages > 0
             ? "- " +
@@ -351,12 +354,18 @@ var server = net.createServer(function (socket) {
         if (user) userList.push(user);
       }
 
-      await RoomModel.create({
+      const newRoom = await RoomModel.create({
         roomName,
         isPublic,
         isDual: false,
         participantIds: userList.map((u) => u._id),
       });
+
+      if (newRoom.isPublic) {
+        publicRooms.push(newRoom);
+      }
+
+      guestSocket.socket.write(`Room ${newRoom.roomName} created!\n`);
       return;
     }
 
