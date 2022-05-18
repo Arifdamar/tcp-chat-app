@@ -222,7 +222,7 @@ const server = net.createServer(function (socket) {
         guestSocket.socket.write("You are now registered!\n");
         let message = "You can join those rooms by typing '/join roomName'\n";
         guestSocket.availableRooms.forEach(
-          (room) => (message += `${room.roomName}\n`)
+          (room) => (message += `- ${room.roomName}\n`)
         );
         guestSocket.socket.write(message);
         return;
@@ -274,7 +274,7 @@ const server = net.createServer(function (socket) {
               ).length
             : 0;
 
-          message += `${r.roomName} ${
+          message += `- ${r.roomName} ${
             unreadMessages > 0
               ? "- " +
                 unreadMessages +
@@ -309,9 +309,6 @@ const server = net.createServer(function (socket) {
         participantIds: { $in: guestSocket.user!._id },
       }).populate("messages");
 
-      // console.log("publicRooms", publicRooms);
-      // console.log("availableRooms", guestSocket.availableRooms);
-
       guestSocket.availableRooms.push(
         ...publicRooms.filter(
           (pr) =>
@@ -328,7 +325,7 @@ const server = net.createServer(function (socket) {
             ).length
           : 0;
 
-        message += `${r.roomName} ${
+        message += `- ${r.roomName} ${
           unreadMessages > 0
             ? "- " +
               unreadMessages +
