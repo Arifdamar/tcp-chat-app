@@ -4,7 +4,6 @@ import { IUser, UserModel } from "./models/user";
 import bcrypt from "bcrypt";
 import { IRoom, RoomModel } from "./models/room";
 import MessageModel from "./models/message";
-import { config } from "dotenv";
 import { serverConfig } from "./config";
 
 const guestSockets: AppSocket[] = [];
